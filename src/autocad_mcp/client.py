@@ -6,6 +6,7 @@ import asyncio
 import base64
 import functools
 import json
+import os
 from typing import Any
 
 import structlog
@@ -45,6 +46,18 @@ async def get_backend() -> AutoCADBackend:
             from autocad_mcp.backends.file_ipc import FileIPCBackend
 
             backend = FileIPCBackend()
+            # Local patch: prefer the ActiveX backend on full AutoCAD (LT has no COM).
+            # AUTOCAD_MCP_COM=0 forces the original keystroke/LISP backend.
+            if os.environ.get("AUTOCAD_MCP_COM", "1") != "0":
+                from autocad_mcp.backends.com_backend import ComBackend
+
+                com = ComBackend()
+                com_result = await com.initialize()
+                if com_result.ok:
+                    _backend = com
+                    log.info("backend_initialized", backend=com.name)
+                    return _backend
+                log.warning("com_backend_unavailable", error=com_result.error)
         else:
             from autocad_mcp.backends.ezdxf_backend import EzdxfBackend
 
