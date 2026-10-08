@@ -313,7 +313,7 @@
      (progn
        (setq path (mcp-json-get-string params-json "path"))
        (if path
-         (progn (command "_.SAVEAS" "DXF" path) (cons T (strcat "\"" path "\"")))
+         (progn (command "_.SAVEAS" "_DXF" path) (cons T (strcat "\"" path "\"")))
          (cons nil "Save path required"))))
 
     ((= cmd-name "drawing-purge")
@@ -548,7 +548,7 @@
   (if layer
     (progn (ensure_layer_exists layer "white" "CONTINUOUS") (set_current_layer layer))
   )
-  (command "_TEXT" "J" "M" (list x y 0.0) height rotation text)
+  (command "_TEXT" "_J" "_M" (list x y 0.0) height rotation text)
   (cons T (strcat "{\"entity_type\":\"TEXT\",\"handle\":\"" (cdr (assoc 5 (entget (entlast)))) "\"}"))
 )
 
