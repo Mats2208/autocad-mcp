@@ -157,8 +157,9 @@ class FileIPCBackend(AutoCADBackend):
             tmp_file.write_text(json.dumps(payload), encoding="utf-8")
             tmp_file.rename(cmd_file)
 
-            # Type the fixed dispatch trigger
-            self._type_dispatch_trigger()
+            # Trigger the dispatcher: COM first (focus-independent), keystrokes as fallback
+            if not self._com_dispatch_trigger():
+                self._type_dispatch_trigger()
 
             # Poll for result
             deadline = time.time() + TIMEOUT
@@ -212,6 +213,42 @@ class FileIPCBackend(AutoCADBackend):
             return mdi_client[0] if mdi_client else None
         except Exception:
             return None
+
+    def _com_dispatch_trigger(self) -> bool:
+        """Local patch: trigger the dispatcher via COM SendCommand (full AutoCAD only).
+
+        Unlike WM_CHAR keystrokes, this does not depend on keyboard focus, so the
+        user moving the mouse or clicking in AutoCAD does not swallow the trigger.
+        Returns False when COM is unavailable (e.g. AutoCAD LT) so the caller can
+        fall back to keystrokes.
+        """
+        if sys.platform != "win32":
+            return False
+        try:
+            import pythoncom
+            import win32com.client
+
+            pythoncom.CoInitialize()
+            for attempt in range(20):
+                try:
+                    if getattr(self, "_acad_app", None) is None:
+                        self._acad_app = win32com.client.GetActiveObject("AutoCAD.Application")
+                    # ESC ESC cancels any pending command, same as the keystroke path.
+                    self._acad_app.ActiveDocument.SendCommand("\x1b\x1b(c:mcp-dispatch)\n")
+                    return True
+                except pythoncom.com_error as e:
+                    # RPC_E_CALL_REJECTED / RPC_E_SERVERCALL_RETRYLATER: AutoCAD busy, retry.
+                    if e.hresult in (-2147418111, -2147417846):
+                        time.sleep(0.25)
+                        continue
+                    self._acad_app = None
+                    if attempt >= 1:
+                        raise
+            return False
+        except Exception as e:
+            log.warning("com_dispatch_unavailable", error=str(e))
+            self._acad_app = None
+            return False
 
     def _type_dispatch_trigger(self):
         """Post '(c:mcp-dispatch)' + Enter via WM_CHAR to MDIClient — no focus steal.
